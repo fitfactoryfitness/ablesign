@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-slate-50 text-slate-800;
+}
+
+.help-dot {
+  @apply inline-flex items-center justify-center w-4 h-4 rounded-full bg-slate-200 text-slate-600 text-[11px] font-semibold cursor-help select-none align-middle ml-1;
+}
