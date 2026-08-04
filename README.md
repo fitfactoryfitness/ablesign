@@ -1,12 +1,12 @@
-# AbleSign Control Panel
+# AbleSign Scripts
 
-This is a simple app for managing what shows on the gym's TV screens
-(DRILLROOM TV1/TV3/TV5) — the weekly class schedule, uploading new slides,
-and pushing them to the screens — without needing to touch AbleSign
-directly.
+Commands for managing what shows on the gym's TV screens (DRILLROOM
+TV1/TV3/TV5) — uploading class slides, scheduling them, checking what's
+live. There's no app to open — you type a command in Terminal for
+whatever you want to do.
 
-This guide assumes you've never used Terminal or git before. Every step is
-spelled out.
+This guide assumes you've never used Terminal or git before. Every step
+is spelled out.
 
 ---
 
@@ -14,14 +14,7 @@ spelled out.
 
 You only ever do this once, on your own laptop.
 
-### Step 1: Install two free programs
-
-1. **Node.js** — go to [nodejs.org](https://nodejs.org), download the
-   installer for Mac, open it, click through like any normal app install.
-2. **Python** — Macs already come with this, you don't need to install
-   anything.
-
-### Step 2: Get the project files onto your computer
+### Step 1: Get the project files onto your computer
 
 1. Press `Cmd + Space`, type `Terminal`, press Enter. A black window opens
    — that's Terminal.
@@ -33,82 +26,128 @@ You only ever do this once, on your own laptop.
    install "Command Line Developer Tools." Click **Install**, wait for it
    to finish, then run the same command above again.
 4. When it's done, you'll have a new folder called `ablesign-automation`
-   on your Desktop. That's the whole app.
+   on your Desktop. That's everything.
 
-### Step 3: Get the AbleSign key from Lucas
+### Step 2: Get the AbleSign key from Lucas
 
-The app needs a small key file to talk to AbleSign. Ask Lucas to send you
-the file named `.ablesign_api_key` (AirDrop, Slack, text — doesn't
-matter). Drag that file directly into the `ablesign-automation` folder on
-your Desktop.
+The scripts need a small key file to talk to AbleSign. Ask Lucas to send
+you the file named `.ablesign_api_key` (AirDrop, Slack, text — doesn't
+matter). Drag that file directly into the `ablesign-automation` folder.
 
 You won't see it appear in the folder afterward — that's normal, files
 starting with a dot are hidden by Finder. As long as you dragged it in,
 it's there.
 
+### Step 3 (only if you'll be uploading new content from Drive): rclone
+
+If you'll be running "Upload Content" or "Update Program" yourself, ask
+Lucas to walk you through setting up `rclone` (a one-time step that
+connects to Google Drive). Everything else in this guide works fine
+without it.
+
 That's it for one-time setup.
 
 ---
 
-## Part 2 — Using the app, every time
+## Part 2 — Every time you want to do something
 
 1. Open the `ablesign-automation` folder on your Desktop.
-2. Double-click **`Start AbleSign App.command`**.
-3. A black Terminal window opens and text starts scrolling — this is
-   normal. The first time can take a minute or two (installing things);
-   after that it's much faster. Wait until you see a line that says
-   `ready`.
-4. Open your web browser (Safari, Chrome, whatever you normally use) and
-   go to:
+2. Double-click **`Check for Updates.command`**. A black Terminal window
+   opens, pulls the latest version, and checks everything's installed.
+   Wait for it to say `All set`, then press Enter to close it.
+3. Press `Cmd + Space`, type `Terminal`, press Enter.
+4. Paste this once per Terminal window (it puts you in the right folder):
    ```
-   http://127.0.0.1:5173
+   cd ~/Desktop/ablesign-automation
    ```
-5. Use the app normally (see the tour below).
-6. When you're done, go back to that black Terminal window and either
-   close it, or click inside it and press `Ctrl + C`.
-
-Every time you double-click the launcher, it automatically checks GitHub
-for the newest version of the app first — you never need to remember to
-update anything yourself.
+5. Type/paste whichever command below matches what you want to do, and
+   press Enter.
 
 ---
 
-## Part 3 — A quick tour of each page
+## Part 3 — The commands
 
-- **Weekly Schedule** — the master weekly schedule. Drag a class card to
-  a different day, click a card to edit its time, or duplicate/delete it.
-  Changes aren't saved until you click **Update the schedule** and
-  confirm.
-- **Playlist Viewer** — a read-only view of exactly what's currently
-  scheduled on each screen, straight from AbleSign. Safe to open anytime.
-- **Now On Screen** — pick a screen, see exactly what should be playing
-  on it at this exact moment.
-- **Upload Content** — pulls that month's class slides from Google Drive
-  and uploads them into AbleSign. Doesn't put anything on a screen yet.
-- **Create Playlist** — takes whatever's been uploaded plus the current
-  Weekly Schedule and pushes it live to TV1/TV3/TV5. Always shows you a
-  preview of exactly what will change before you confirm.
-- **Delete Playlist** — wipes everything off one screen. Permanent, so it
-  makes you type the word `DELETE` to confirm.
+For every action, there's usually a "preview" version (`--dry-run`) that
+shows you exactly what would happen without changing anything — always
+run that first to double check, then run the real version.
 
-Every button that changes something real always asks you to confirm
-first — nothing happens from a single accidental click.
+### Screens reference
+
+| Name | Screen ID |
+|---|---|
+| DRILLROOM TV1 | `499083` |
+| DRILLROOM TV3 | `499094` |
+| DRILLROOM TV5 | `499095` |
+| Headquarter (test screen) | `498279` |
+
+### See what's on a screen right now
+```
+python3 list_playlist.py --screen-id 499083
+```
+Add `--full` to see the whole week instead of just this moment.
+
+### Upload this month's slides from Drive into AbleSign
+```
+python3 upload_content.py --month "8. August" --dry-run
+python3 upload_content.py --month "8. August"
+```
+This only uploads the files — it doesn't put anything on a screen yet.
+
+### Push the schedule to all 3 screens (TV1/TV3/TV5)
+```
+python3 create_playlist.py --dry-run
+python3 create_playlist.py
+```
+No flags needed — it always targets all 3 real screens using whatever's
+in `schedule.csv` and whatever's already been uploaded. Rate-limited by
+AbleSign, so a full push can take a couple hours; safe to stop (`Ctrl+C`)
+and rerun the exact same command any time, it picks up where it left off.
+
+### Clear everything off one screen
+```
+python3 delete_playlist.py --screen-id 499083 --dry-run
+python3 delete_playlist.py --screen-id 499083 --yes
+```
+Permanent — there's no undo. `--yes` is required for the real run on
+purpose, so you can't do this by accident.
+
+### Refresh just ONE class's slides everywhere (without touching anything else)
+```
+python3 update_program.py --month "8. August" --program "ABS ASSAULT" --dry-run
+python3 update_program.py --month "8. August" --program "ABS ASSAULT" --yes
+```
+Pulls new files for that one class from Drive, uploads them, and swaps
+just that class's slides on all 3 screens — leaves every other class
+completely alone. Old slides aren't deleted, just no longer shown.
+
+### Test on the Headquarter screen first
+```
+python3 test.py --folder "Claude/8. August" --dry-run
+python3 test.py --folder "Claude/8. August"
+```
+Same as "push the schedule," but only onto the Headquarter test screen —
+useful for checking something looks right before pushing to the real TVs.
+
+---
+
+## Editing the weekly schedule
+
+`schedule.csv` (inside the `ablesign-automation` folder) is the source of
+truth for when each class shows. It's a plain spreadsheet file — open it
+with Excel, Numbers, or Google Sheets, edit it, save it as a `.csv` file
+with the same name. Columns: `Class`, `Day`, `Start`, `End` (24-hour time,
+like `17:16`). Changes only take effect once you run `create_playlist.py`
+again afterward.
 
 ---
 
 ## If something goes wrong
 
-- **The Terminal window shows red/error text** — take a screenshot and
-  send it to Lucas.
-- **"Address already in use"** — you probably already have the app
-  running in another window somewhere. Close other Terminal windows and
-  try again.
-- **The browser page won't load** — wait a little longer, the first
-  start-up can be slow, then refresh the page.
-- **Upload Content doesn't work** — this one feature needs a bit of extra
-  one-time setup with Lucas (Google Drive access). Everything else on
-  this page works without it.
+- **Red/error text in Terminal** — screenshot it and send it to Lucas.
+- **A command says something like "not found" or "No module named..."**
+  — run `Check for Updates.command` again, then retry.
+- **Not sure what a flag like `--dry-run` does** — it's always safe: it
+  only shows a preview, nothing in AbleSign changes.
 
-If none of that helps, screenshot whatever the Terminal window says and
-send it to Lucas — that's always the fastest way for him to figure out
-what happened.
+If none of that helps, screenshot whatever Terminal says and send it to
+Lucas — that's the fastest way for him to figure out what happened.
