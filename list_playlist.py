@@ -21,6 +21,7 @@ Usage:
 """
 
 import argparse
+import sys
 
 import ablesign_common as common
 
@@ -76,4 +77,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except common.AbleSignError as e:
+        sys.exit(str(e))

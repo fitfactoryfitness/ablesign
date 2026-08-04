@@ -26,8 +26,9 @@ import time
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 # ablesign_common.py / create_playlist.py / upload_content.py live two
 # directories up from this file (webapp/backend/main.py -> repo root).
@@ -43,10 +44,21 @@ SCHEDULE_CSV = str(REPO_ROOT / "schedule.csv")
 app = FastAPI(title="AbleSign Control Panel")
 app.add_middleware(
     CORSMiddleware,
+    # Everyone runs the frontend and backend together on their own laptop
+    # (via start_app.sh), so this only ever needs to allow the local Vite
+    # dev server talking to the local backend - never a remote origin.
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(common.AbleSignError)
+async def ablesign_error_handler(request: Request, exc: common.AbleSignError):
+    """AbleSignError is raised for expected, user-facing problems (missing
+    config, screen/folder not found, rclone missing, ...). Without this
+    handler FastAPI would return a generic 500 with no useful message."""
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
 # ---------------------------------------------------------------------

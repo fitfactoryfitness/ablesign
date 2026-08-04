@@ -1,0 +1,20 @@
+# secrets - never commit the real API key, only the .example template
+.ablesign_api_key
+
+# Node (package-lock.json IS committed on purpose, for reproducible installs)
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+
+# schedule.csv backups (auto-created by the Weekly Schedule editor on save)
+schedule.csv.bak-*
+
+# logs / stray output
+nohup.out
+webapp/service.log
+*.log
+
+# OS
+.DS_Store

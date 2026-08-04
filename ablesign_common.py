@@ -37,7 +37,37 @@ from datetime import datetime, timezone
 
 import requests
 
-ABLESIGN_API_KEY = "ak_1c9d0575130dabc8d361567017896164eae8c52c"
+
+class AbleSignError(Exception):
+    """Raised for any expected/user-facing error (missing config, screen not
+    found, etc). Never sys.exit() from this module: it's imported both by
+    one-shot CLI scripts AND by the long-running web app backend, where
+    sys.exit() would raise SystemExit inside a request-handling thread and
+    just hang that request instead of returning a clean error. CLI scripts
+    catch AbleSignError in their own main() and exit(1) there; the backend
+    catches it and returns a proper JSON error."""
+
+
+_KEY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".ablesign_api_key")
+
+
+def _load_api_key():
+    env_key = os.environ.get("ABLESIGN_API_KEY")
+    if env_key:
+        return env_key.strip()
+    if os.path.exists(_KEY_FILE):
+        with open(_KEY_FILE) as f:
+            key = f.read().strip()
+        if key:
+            return key
+    raise AbleSignError(
+        "No AbleSign API key configured. Either set the ABLESIGN_API_KEY environment "
+        f"variable, or create a file at {_KEY_FILE} containing just the key "
+        "(see .ablesign_api_key.example). Ask Lucas for the current key."
+    )
+
+
+ABLESIGN_API_KEY = _load_api_key()
 ABLESIGN_BASE = "https://api.ablesign.tv/api/v1"
 RCLONE_REMOTE = "gdrive"
 
@@ -85,7 +115,7 @@ def rclone_list_subfolders(folder_id):
         capture_output=True, text=True,
     )
     if result.returncode != 0:
-        sys.exit(f"rclone lsjson failed:\n{result.stderr}")
+        raise AbleSignError(f"rclone lsjson failed:\n{result.stderr}")
     import json as _json
     entries = _json.loads(result.stdout or "[]")
     return [(e["Name"], e["ID"]) for e in entries]
@@ -97,7 +127,7 @@ def rclone_pull_folder(folder_id, dest_dir):
         capture_output=True, text=True,
     )
     if result.returncode != 0:
-        sys.exit(f"rclone copy failed:\n{result.stderr}")
+        raise AbleSignError(f"rclone copy failed:\n{result.stderr}")
 
 
 def list_local_files(folder):
@@ -143,7 +173,7 @@ def list_screens():
 def get_screen_by_id(screen_id):
     r = requests.get(f"{ABLESIGN_BASE}/screens/{screen_id}", headers=ablesign_headers(), timeout=30)
     if r.status_code == 404:
-        sys.exit(f"No AbleSign screen with id {screen_id}.")
+        raise AbleSignError(f"No AbleSign screen with id {screen_id}.")
     r.raise_for_status()
     return r.json()["data"]
 
@@ -159,11 +189,11 @@ def get_screen_by_title(title):
         if s["title"].strip().lower() == title.strip().lower()
     ]
     if not candidates:
-        sys.exit(
+        raise AbleSignError(
             f"No AbleSign screen titled '{title}'. Check the exact screen name in AbleSign."
         )
     if len(candidates) > 1:
-        sys.exit(
+        raise AbleSignError(
             f"Multiple AbleSign screens match '{title}'. Screen titles must be unique "
             "across your workspace for this to work safely; use --screen-id instead."
         )
@@ -236,9 +266,9 @@ def lookup_path(root_path):
                 match = existing_id
                 break
         if match is None:
-            sys.exit(
+            raise AbleSignError(
                 f"AbleSign folder '{segment}' not found under '{root_path}' "
-                f"(while resolving '{root_path}'). Run upload_content.py first."
+                f"(while resolving '{root_path}'). Run Upload Content for this month first."
             )
         parent_id = match
     return parent_id
@@ -478,6 +508,56 @@ def clear_playlist(screen_id):
     _playlist_write("PUT", f"{ABLESIGN_BASE}/screens/{screen_id}/playlist", screen_id, json=body)
 
 
+def _item_for_put(item):
+    """Reconstructs a GET-shaped playlist item into the PUT request shape.
+    PUT replaces the WHOLE playlist, so anything not carried over here -
+    including a manually-set periodicScheduleEnabled/scheduleStartDate/
+    scheduleEndDate on some OTHER unrelated item - would be silently
+    destroyed. GET returns "HH:mm:ss" for day windows; PUT expects
+    "HH:mm", hence the [:5] truncation."""
+    out = {
+        "mediafileId": item.get("mediafileId"),
+        "webAppId": item.get("webAppId"),
+        "displayDuration": item.get("displayDuration"),
+        "sequenceNumber": item.get("sequenceNumber"),
+        "transition": item.get("transition"),
+        "transitionSpeedLabel": item.get("transitionSpeedLabel"),
+        "scheduleEnabled": item.get("scheduleEnabled"),
+        "scheduleStartDate": item.get("scheduleStartDate"),
+        "scheduleEndDate": item.get("scheduleEndDate"),
+        "scheduleRrule": item.get("scheduleRrule"),
+        "periodicScheduleEnabled": item.get("periodicScheduleEnabled"),
+    }
+    for day in ALL_DAY_KEYS:
+        out[f"{day}Start"] = (item.get(f"{day}Start") or "00:00:00")[:5]
+        out[f"{day}End"] = (item.get(f"{day}End") or "00:00:00")[:5]
+    return out
+
+
+def remove_playlist_items(screen_id, media_ids_to_remove):
+    """Removes just the items whose mediafileId is in media_ids_to_remove
+    from a screen's playlist - everything else (including other items'
+    manually-set periodic scheduling) is preserved exactly. Used by
+    update_program.py to swap out one class's old slides without
+    disturbing anything else on the screen. Returns how many were removed."""
+    playlist = get_playlist(screen_id)
+    items = playlist.get("items", [])
+    keep = [it for it in items if it.get("mediafileId") not in media_ids_to_remove]
+    removed_count = len(items) - len(keep)
+    if removed_count == 0:
+        return 0
+    body = {
+        "shufflePlay": playlist.get("shufflePlay", False),
+        "defaultTransition": playlist.get("defaultTransition"),
+        "defaultTransitionSpeedLabel": playlist.get("defaultTransitionSpeedLabel"),
+        "enableImageTransitions": playlist.get("enableImageTransitions", False),
+        "enableWebappTransitions": playlist.get("enableWebappTransitions", False),
+        "items": [_item_for_put(it) for it in keep],
+    }
+    _playlist_write("PUT", f"{ABLESIGN_BASE}/screens/{screen_id}/playlist", screen_id, json=body)
+    return removed_count
+
+
 # ---------------------------------------------------------------------
 # schedule.csv (Class,Day,Start,End) - see module docstring: no date-bounded
 # periodic scheduling, every row becomes a plain weekly-recurring item.
@@ -490,7 +570,7 @@ def normalize_time(t):
 
 def load_schedule(path):
     if not os.path.exists(path):
-        sys.exit(
+        raise AbleSignError(
             f"Schedule file not found: {path}\n"
             "Export the AI SCHEDULE tab first: Google Sheets > File > Download "
             "> Comma-separated values (.csv, current sheet), save as this filename."

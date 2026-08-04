@@ -1,3 +1,5 @@
+// Everyone runs frontend + backend together on their own laptop, so this
+// is always the same machine's backend on its fixed port.
 const BASE = 'http://127.0.0.1:8000'
 
 async function handle(res) {

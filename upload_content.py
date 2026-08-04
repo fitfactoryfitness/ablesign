@@ -29,20 +29,20 @@ def run(month, dry_run):
     """Core logic, also called directly by the web app backend. Returns
     the number of files uploaded (or that would be uploaded, if dry_run)."""
     if shutil.which("rclone") is None:
-        sys.exit("rclone not found. Install it first: brew install rclone")
+        raise common.AbleSignError("rclone not found. Install it first: brew install rclone")
 
     print(f"Looking for Drive month folder '{month}' under the Programming folder...")
     month_folders = common.rclone_list_subfolders(common.PARENT_DRIVE_FOLDER_ID)
     match = next((fid for name, fid in month_folders if name.strip().lower() == month.strip().lower()), None)
     if match is None:
         available = ", ".join(name for name, _ in month_folders)
-        sys.exit(f"No Drive subfolder named '{month}' found. Available: {available}")
+        raise common.AbleSignError(f"No Drive subfolder named '{month}' found. Available: {available}")
     drive_month_id = match
     print(f"Found Drive folder '{month}' (id {drive_month_id})\n")
 
     class_folders = common.rclone_list_subfolders(drive_month_id)
     if not class_folders:
-        sys.exit(f"No class subfolders found under Drive folder '{month}'")
+        raise common.AbleSignError(f"No class subfolders found under Drive folder '{month}'")
 
     ablesign_root = f"Claude/{month}"
     ablesign_root_id = None if dry_run else common.resolve_or_create_path(ablesign_root)
@@ -108,4 +108,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except common.AbleSignError as e:
+        sys.exit(str(e))
