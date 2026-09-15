@@ -47,7 +47,7 @@ export default function UploadContent() {
     <div className="max-w-2xl">
       <h1 className="text-xl font-semibold text-slate-800 mb-1">
         Upload Content
-        <Help text="Pulls the slides for a month from Google Drive and uploads them into AbleSign under Claude/<month>. This does NOT schedule anything on a screen - that's the Create Playlist page, once uploading is done." />
+        <Help text="Pulls the slides for a month from Google Drive and uploads them into AbleSign under GROUP FITNESS/<month>. This does NOT schedule anything on a screen - that's the Create Playlist page, once uploading is done." />
       </h1>
       <p className="text-sm text-slate-500 mb-4">Mirrors one month's slides from Drive into AbleSign. Doesn't touch any screen's playlist.</p>
 

@@ -306,6 +306,92 @@ def get_media_file(media_id):
     return r.json()["data"]
 
 
+def delete_media_file(media_id):
+    """Per the docs: 'Deletes the file and removes it from all playlists' -
+    if this media is currently scheduled anywhere, it goes dark immediately.
+    Permanent, no undo."""
+    r = requests.delete(f"{ABLESIGN_BASE}/media_files/{media_id}", headers=ablesign_headers(), timeout=30)
+    r.raise_for_status()
+
+
+def delete_folder(folder_id):
+    """Only safe to call once the folder is already empty - see
+    delete_folder_tree(), which guarantees that by deleting bottom-up."""
+    r = requests.delete(f"{ABLESIGN_BASE}/folders/{folder_id}", headers=ablesign_headers(), timeout=30)
+    r.raise_for_status()
+
+
+def all_live_media_ids():
+    """Every mediafileId currently referenced in any screen's playlist,
+    across every screen in the account (not just TV1/TV3/TV5) - used to
+    avoid deleting a file that's actively live somewhere right now."""
+    ids = set()
+    for screen in list_screens():
+        playlist = get_playlist(screen["id"])
+        for item in playlist.get("items", []):
+            mid = item.get("mediafileId")
+            if mid is not None:
+                ids.add(mid)
+    return ids
+
+
+def delete_folder_tree(folder_id, dry_run=False, indent=""):
+    """Recursively deletes every media file and subfolder under folder_id,
+    then folder_id itself - files first, subfolders depth-first, the
+    folder last, so nothing is ever deleted while still non-empty
+    regardless of whatever AbleSign's own cascade behavior turns out to
+    be (undocumented). Returns (files_deleted, folders_deleted).
+
+    Anything (folder or file) with "psc" anywhere in its name (case
+    insensitive) is skipped entirely - not deleted, not recursed into -
+    as a blanket safety net for PSC content regardless of where it turns
+    up in the tree. A skip anywhere in a subtree propagates up: a folder
+    that still contains protected content (even nested several levels
+    down) is left in place rather than deleted, since deleting it would
+    orphan whatever's still inside it.
+
+    Returns (files_deleted, folders_deleted, anything_skipped)."""
+    files_deleted = 0
+    folders_deleted = 0
+    anything_skipped = False
+
+    for name, child_id in list_child_folders(folder_id):
+        if "psc" in name.lower():
+            print(f"{indent}  SKIPPING folder '{name}' (protected: contains \"PSC\")")
+            anything_skipped = True
+            continue
+        f, d, child_skipped = delete_folder_tree(child_id, dry_run, indent + "  ")
+        files_deleted += f
+        folders_deleted += d
+        anything_skipped = anything_skipped or child_skipped
+
+    for name, media_id in list_media_files(folder_id):
+        if "psc" in name.lower():
+            print(f"{indent}  SKIPPING file '{name}' (protected: contains \"PSC\")")
+            anything_skipped = True
+            continue
+        verb = "would delete" if dry_run else "deleting"
+        print(f"{indent}  {verb} file: {name}")
+        if not dry_run:
+            delete_media_file(media_id)
+        files_deleted += 1
+
+    if anything_skipped:
+        # Leave this folder in place - it (or a descendant, however deep)
+        # still holds protected content, so deleting it would orphan that
+        # content instead of just leaving it accessible where it already was.
+        print(f"{indent}NOT deleting folder (id {folder_id}) - still contains protected PSC content")
+        return files_deleted, folders_deleted, True
+
+    verb = "would delete" if dry_run else "deleting"
+    print(f"{indent}{verb} folder (id {folder_id})")
+    if not dry_run:
+        delete_folder(folder_id)
+    folders_deleted += 1
+
+    return files_deleted, folders_deleted, False
+
+
 def upload_media(filename, mimetype, data, folder_id):
     r = requests.post(
         f"{ABLESIGN_BASE}/media_files/init_upload", headers=ablesign_headers(),

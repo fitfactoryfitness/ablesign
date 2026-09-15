@@ -15,8 +15,8 @@ Run delete_playlist.py --screen-id 498279 first if you want Headquarter
 cleared before this test run.
 
 Usage:
-  python3 test.py --folder "Claude/8. August" --dry-run
-  python3 test.py --folder "Claude/8. August"
+  python3 test.py --folder "GROUP FITNESS/PACKAGE A" --dry-run
+  python3 test.py --folder "GROUP FITNESS/PACKAGE A"
 """
 
 import argparse
@@ -31,8 +31,8 @@ def main():
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument(
-        "--folder", default="Claude/8. August",
-        help='AbleSign folder path, e.g. "Claude/8. August" (default: "Claude/8. August")',
+        "--folder", default="GROUP FITNESS/PACKAGE A",
+        help='AbleSign folder path, e.g. "GROUP FITNESS/PACKAGE A" (default: "GROUP FITNESS/PACKAGE A")',
     )
     parser.add_argument("--schedule-csv", default="schedule.csv", help="Local CSV exported from AI SCHEDULE")
     parser.add_argument("--duration", type=int, default=common.DURATION, help=f"Display duration in seconds (default {common.DURATION})")

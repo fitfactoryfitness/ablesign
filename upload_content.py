@@ -3,18 +3,22 @@
 upload_content.py
 
 Mirrors one month's class slides from Drive into AbleSign, under
-Claude/<month>. Does NOT touch any screen's playlist - that's
+GROUP FITNESS/<month>. Does NOT touch any screen's playlist - that's
 create_playlist.py's job, run separately once content is uploaded.
 
 Drive source: the fixed "Programming" parent folder
 (https://drive.google.com/drive/folders/1sm9n_jKbWJEkBd-ziiyBTrvjbwJyK-ye),
 under which each month has its own subfolder (e.g. "8. August"). You just
 name the month; the Drive subfolder and the AbleSign destination folder
-(Claude/<month>) are both derived from that one name.
+(GROUP FITNESS/<month>) are both derived from that one name.
 
 Usage:
   python3 upload_content.py --month "8. August" --dry-run
   python3 upload_content.py --month "8. August"
+
+  # Just specific classes, instead of the whole month (won't re-touch/
+  # duplicate anything already uploaded for classes not listed):
+  python3 upload_content.py --month "PACKAGE A" --programs "ATH CON SPEED W12,ATH CON SPEED W34" --dry-run
 """
 
 import argparse
@@ -25,9 +29,14 @@ import tempfile
 import ablesign_common as common
 
 
-def run(month, dry_run):
+def run(month, dry_run, programs=None):
     """Core logic, also called directly by the web app backend. Returns
-    the number of files uploaded (or that would be uploaded, if dry_run)."""
+    the number of files uploaded (or that would be uploaded, if dry_run).
+
+    programs: optional list of exact class-folder names (case-insensitive)
+    to restrict processing to, instead of every class folder under the
+    month. Useful for uploading just a few classes without re-touching
+    (and duplicating) everything else already uploaded."""
     if shutil.which("rclone") is None:
         raise common.AbleSignError("rclone not found. Install it first: brew install rclone")
 
@@ -44,7 +53,15 @@ def run(month, dry_run):
     if not class_folders:
         raise common.AbleSignError(f"No class subfolders found under Drive folder '{month}'")
 
-    ablesign_root = f"Claude/{month}"
+    if programs:
+        wanted = {p.strip().lower() for p in programs}
+        found_names = {name.strip().lower() for name, _fid in class_folders}
+        missing = wanted - found_names
+        if missing:
+            raise common.AbleSignError(f"--programs named folder(s) not found under '{month}': {', '.join(sorted(missing))}")
+        class_folders = [(name, fid) for name, fid in class_folders if name.strip().lower() in wanted]
+
+    ablesign_root = f"GROUP FITNESS/{month}"
     ablesign_root_id = None if dry_run else common.resolve_or_create_path(ablesign_root)
 
     total = len(class_folders)
@@ -100,11 +117,17 @@ def main():
              'folder exactly (case-insensitive), e.g. "8. August"',
     )
     parser.add_argument(
+        "--programs",
+        help="Comma-separated list of exact class-folder names to upload, instead of every "
+             'class folder under the month, e.g. "ATH CON SPEED W12,ATH CON SPEED W34"',
+    )
+    parser.add_argument(
         "--dry-run", action="store_true",
         help="List what would be uploaded, touch nothing in AbleSign",
     )
     args = parser.parse_args()
-    run(args.month, args.dry_run)
+    programs = [p.strip() for p in args.programs.split(",")] if args.programs else None
+    run(args.month, args.dry_run, programs=programs)
 
 
 if __name__ == "__main__":

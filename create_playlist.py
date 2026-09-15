@@ -45,7 +45,7 @@ import time
 
 import ablesign_common as common
 
-MONTH_FOLDER = "Claude/8. August"
+MONTH_FOLDER = "GROUP FITNESS/PACKAGE A"
 SCHEDULE_CSV = "schedule.csv"
 
 

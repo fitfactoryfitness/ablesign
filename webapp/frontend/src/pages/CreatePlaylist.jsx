@@ -21,7 +21,7 @@ export default function CreatePlaylist() {
     }).catch((e) => setError(e.message))
   }, [])
 
-  const folder = selectedMonth ? `Claude/${selectedMonth}` : ''
+  const folder = selectedMonth ? `GROUP FITNESS/${selectedMonth}` : ''
 
   async function loadPreview() {
     if (!folder) return

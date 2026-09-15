@@ -12,7 +12,7 @@ using the same day/time windows already in schedule.csv.
 --program must match, case-insensitively:
   - the Drive subfolder name under the month folder
     (Programming/<month>/<program>)
-  - the existing AbleSign folder name under Claude/<month>
+  - the existing AbleSign folder name under GROUP FITNESS/<month>
     (must already exist - run upload_content.py/Upload Content for this
     month first if it doesn't)
   - a Class name in schedule.csv (its existing day/time rows are reused
@@ -27,6 +27,14 @@ A TV whose new file is missing (e.g. Drive only had TV1+TV3, not TV5) is
 left completely untouched for this program - no removal, no addition -
 rather than risk leaving that TV with a gap.
 
+Before touching anything, it compares what's ACTUALLY live on the 3
+screens right now for this program against what schedule.csv says. If
+they match, it proceeds silently. If they don't (a manual AbleSign edit,
+a missed re-push, ...), it prints exactly what's mismatched and asks
+you to confirm before continuing - otherwise it would silently apply
+schedule.csv's times to the new slides even though that's not actually
+what's live today.
+
 Usage:
   python3 update_program.py --month "8. August" --program "ABS ASSAULT" --dry-run
   python3 update_program.py --month "8. August" --program "ABS ASSAULT" --yes
@@ -40,6 +48,61 @@ import tempfile
 import ablesign_common as common
 
 VERSION_RE = re.compile(r"^v(\d+)$", re.IGNORECASE)
+
+
+def _active_windows(item):
+    """[(day, 'HH:MM', 'HH:MM'), ...] for a raw GET-shaped playlist item."""
+    windows = []
+    for day in common.ALL_DAY_KEYS:
+        start = (item.get(f"{day}Start") or "00:00:00")[:5]
+        end = (item.get(f"{day}End") or "00:00:00")[:5]
+        if not (start == "00:00" and end == "00:00"):
+            windows.append((day, start, end))
+    return windows
+
+
+def _check_live_matches_schedule(screens, old_media_ids, rows, dry_run):
+    """Compares what's ACTUALLY live right now (the old items about to be
+    swapped) against what schedule.csv says for this program. If AbleSign's
+    live schedule has drifted from schedule.csv - a manual edit, a missed
+    re-push, whatever - blindly swapping media at schedule.csv's times
+    would silently change the times too, not just the picture. Real runs
+    stop and ask before proceeding; dry runs just report it.
+
+    Returns True if it's fine to proceed, False if the user aborted."""
+    expected = {(common.DAY_ALIASES[day.lower()], start, end) for day, start, end in rows}
+
+    mismatched = {}
+    for tag, screen_id in screens.items():
+        playlist = common.get_playlist(screen_id)
+        live = set()
+        for item in playlist.get("items", []):
+            if item.get("mediafileId") in old_media_ids:
+                live.update(_active_windows(item))
+        if live != expected:
+            mismatched[tag] = live
+
+    if not mismatched:
+        print("Live schedule matches schedule.csv for this program on all 3 screens.\n")
+        return True
+
+    print("WARNING: what's currently live doesn't match schedule.csv for this program.")
+    print(f"  schedule.csv expects: {sorted(expected)}")
+    for tag, live in mismatched.items():
+        screen = common.get_screen_by_id(screens[tag])
+        print(f"  {tag} ({screen['title']}) is currently live at: {sorted(live)}")
+    print()
+
+    if dry_run:
+        print("(dry run - the real run would stop here and ask before proceeding)\n")
+        return True
+
+    answer = input("Continue anyway and use schedule.csv's times for the new slides? [y/N]: ").strip().lower()
+    if answer not in ("y", "yes"):
+        print("Aborted - nothing uploaded or changed.")
+        return False
+    print()
+    return True
 
 
 def run(month, program, schedule_csv, dry_run):
@@ -66,7 +129,7 @@ def run(month, program, schedule_csv, dry_run):
         raise common.AbleSignError(f"No rows for '{program}' in {schedule_csv} (name mismatch?)")
 
     # AbleSign folder must already exist - this script updates content, it doesn't set up a new program.
-    program_folder_id = common.lookup_path(f"Claude/{month}/{program}")
+    program_folder_id = common.lookup_path(f"GROUP FITNESS/{month}/{program}")
 
     existing_children = common.list_child_folders(program_folder_id)
     existing_versions = [int(m.group(1)) for title, _fid in existing_children if (m := VERSION_RE.match(title.strip()))]
@@ -83,6 +146,9 @@ def run(month, program, schedule_csv, dry_run):
     print(f"{len(old_media_ids)} existing media file(s) associated with this program across all versions.\n")
 
     screens = common.load_screens()  # {"TV1": id, "TV3": id, "TV5": id}
+
+    if not _check_live_matches_schedule(screens, old_media_ids, rows, dry_run):
+        return
 
     with tempfile.TemporaryDirectory() as tmpdir:
         common.rclone_pull_folder(drive_program_id, tmpdir)
