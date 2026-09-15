@@ -34,8 +34,9 @@ This uses a tool called `rclone` to read a specific Google Drive folder — set 
 not something that transfers automatically. README.md Part 1 covers this step by step.
 
 ### 4. GitHub (where the code itself lives)
-Nothing you need to do unless you're editing the scripts yourself. Lucas will move this
-repository into a Fit Factory GitHub organization — see the master handover plan.
+Done — this repository now lives at https://github.com/fitfactoryfitness/ablesign, no longer
+tied to Lucas's personal account. You just need to be added as a member of the
+`fitfactoryfitness` GitHub organization if you'll ever edit the scripts yourself.
 
 ## Deeper technical notes
 
